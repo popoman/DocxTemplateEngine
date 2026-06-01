@@ -20,6 +20,21 @@ A .NET 8 CLI tool that fills DOCX templates with content from markdown files, im
 dotnet build
 ```
 
+### Publish as Single EXE
+
+```bash
+dotnet publish src/DocxTemplateEngine -c Release
+```
+
+Produces a single `DocxTemplateEngine.exe` (~8MB) in the publish output folder. Requires .NET 8 runtime on the target machine.
+
+To publish for a different platform, override the runtime identifier:
+
+```bash
+dotnet publish src/DocxTemplateEngine -c Release -r linux-x64
+dotnet publish src/DocxTemplateEngine -c Release -r osx-x64
+```
+
 ### Usage
 
 ```bash
