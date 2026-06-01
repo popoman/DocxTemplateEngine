@@ -1,5 +1,7 @@
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using YamlDotNet.Serialization;
+using YamlDotNet.Serialization.NamingConventions;
 
 namespace DocxTemplateEngine.Models;
 
@@ -13,15 +15,16 @@ public class TemplateConfig
         if (!System.IO.File.Exists(configPath))
             throw new FileNotFoundException($"Configuration file not found: {configPath}");
 
-        var json = System.IO.File.ReadAllText(configPath);
-        var options = new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-            Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
-        };
+        var ext = Path.GetExtension(configPath).ToLowerInvariant();
+        var content = System.IO.File.ReadAllText(configPath);
 
-        var config = JsonSerializer.Deserialize<TemplateConfig>(json, options)
-            ?? throw new InvalidOperationException("Failed to deserialize configuration file.");
+        var config = ext switch
+        {
+            ".yaml" or ".yml" => DeserializeYaml(content),
+            ".json" => DeserializeJson(content),
+            _ => throw new InvalidOperationException(
+                $"Unsupported config file format '{ext}'. Supported: .json, .yaml, .yml")
+        };
 
         var configDir = Path.GetDirectoryName(Path.GetFullPath(configPath)) ?? ".";
         foreach (var entry in config.Placeholders.Values)
@@ -32,6 +35,28 @@ public class TemplateConfig
 
         config.Validate();
         return config;
+    }
+
+    private static TemplateConfig DeserializeJson(string json)
+    {
+        var options = new JsonSerializerOptions
+        {
+            PropertyNameCaseInsensitive = true,
+            Converters = { new JsonStringEnumConverter(JsonNamingPolicy.CamelCase) }
+        };
+
+        return JsonSerializer.Deserialize<TemplateConfig>(json, options)
+            ?? throw new InvalidOperationException("Failed to deserialize JSON configuration file.");
+    }
+
+    private static TemplateConfig DeserializeYaml(string yaml)
+    {
+        var deserializer = new DeserializerBuilder()
+            .WithNamingConvention(CamelCaseNamingConvention.Instance)
+            .Build();
+
+        return deserializer.Deserialize<TemplateConfig>(yaml)
+            ?? throw new InvalidOperationException("Failed to deserialize YAML configuration file.");
     }
 
     public void Validate()

@@ -44,7 +44,9 @@ dotnet run --project src/DocxTemplateEngine -- \
 
 ## Configuration
 
-Create a JSON configuration file that maps placeholder names to data sources:
+Create a JSON or YAML configuration file that maps placeholder names to data sources. The format is auto-detected by file extension (`.json`, `.yaml`, or `.yml`).
+
+### JSON format
 
 ```json
 {
@@ -70,6 +72,27 @@ Create a JSON configuration file that maps placeholder names to data sources:
     }
   }
 }
+```
+
+### YAML format
+
+```yaml
+placeholders:
+  Introduction:
+    type: Markdown
+    source: content/intro.md
+  CompanyLogo:
+    type: Image
+    source: assets/logo.png
+    widthCm: 5.0
+    heightCm: 3.0
+  BudgetReport:
+    type: File
+    source: data/budget.xlsx
+    displayName: Budget Report Q1
+  MetricsTable:
+    type: MarkdownTable
+    source: data/metrics.md
 ```
 
 ### Placeholder Types
@@ -191,6 +214,7 @@ DocxTemplateEngine/
 
 - [DocumentFormat.OpenXml](https://github.com/dotnet/Open-XML-SDK) — DOCX manipulation
 - [Markdig](https://github.com/xoofx/markdig) — Markdown parsing
+- [YamlDotNet](https://github.com/aaubry/YamlDotNet) — YAML configuration support
 
 ## License
 
