@@ -4,6 +4,7 @@ using DocumentFormat.OpenXml.Wordprocessing;
 using Markdig;
 using Markdig.Syntax;
 using Markdig.Syntax.Inlines;
+using MarkdigTable = Markdig.Extensions.Tables.Table;
 
 namespace DocxTemplateEngine.Converters;
 
@@ -49,6 +50,7 @@ public class MarkdownToOpenXmlConverter
             ListBlock list => ConvertList(list),
             QuoteBlock quote => ConvertQuoteBlock(quote),
             ThematicBreakBlock => ConvertThematicBreak(),
+            MarkdigTable table => ConvertTable(table),
             LinkReferenceDefinitionGroup => [],  // Internal Markdig metadata, not rendered
             LinkReferenceDefinition => [],
             _ => ConvertFallbackBlock(block)
@@ -248,6 +250,13 @@ public class MarkdownToOpenXmlConverter
         };
         paragraph.Append(pProps);
         return [paragraph];
+    }
+
+    private List<OpenXmlElement> ConvertTable(MarkdigTable markdigTable)
+    {
+        var tableConverter = new MarkdownTableConverter(_document);
+        var table = tableConverter.ConvertTable(markdigTable);
+        return [table];
     }
 
     private List<OpenXmlElement> ConvertFallbackBlock(Block block)

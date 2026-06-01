@@ -41,6 +41,14 @@ public class MarkdownTableConverter
         if (markdigTable == null)
             return null;
 
+        return ConvertTable(markdigTable);
+    }
+
+    /// <summary>
+    /// Converts an already-parsed Markdig table block into an OpenXml Table.
+    /// </summary>
+    public Table ConvertTable(MarkdigTable markdigTable)
+    {
         var table = new Table();
 
         // Table properties: borders, width
@@ -120,7 +128,7 @@ public class MarkdownTableConverter
         {
             if (block is Markdig.Syntax.ParagraphBlock pb && pb.Inline != null)
             {
-                var cellContent = pb.Inline.ToString() ?? string.Empty;
+                var cellContent = ExtractInlineText(pb.Inline);
                 var run = new Run();
 
                 if (isHeader)

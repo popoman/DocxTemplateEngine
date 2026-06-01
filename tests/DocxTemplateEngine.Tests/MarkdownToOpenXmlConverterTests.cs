@@ -172,4 +172,77 @@ public class MarkdownToOpenXmlConverterTests : IDisposable
             fullText.Should().Contain("here");
         }
     }
+
+    [Fact]
+    public void Convert_PipeTable_ReturnsTableElement()
+    {
+        var (doc, converter) = CreateDocAndConverter();
+        using (doc)
+        {
+            var markdown = "| Name | Age |\n| --- | --- |\n| Alice | 30 |\n| Bob | 25 |";
+            var elements = converter.Convert(markdown);
+
+            elements.Should().ContainSingle();
+            elements[0].Should().BeOfType<Table>();
+
+            var table = (Table)elements[0];
+            var rows = table.Elements<TableRow>().ToList();
+            rows.Should().HaveCount(3); // header + 2 data rows
+        }
+    }
+
+    [Fact]
+    public void Convert_PipeTable_HeaderCellsAreBold()
+    {
+        var (doc, converter) = CreateDocAndConverter();
+        using (doc)
+        {
+            var markdown = "| Name | Age |\n| --- | --- |\n| Alice | 30 |";
+            var elements = converter.Convert(markdown);
+
+            var table = (Table)elements[0];
+            var headerRow = table.Elements<TableRow>().First();
+            var firstCell = headerRow.Elements<TableCell>().First();
+            var run = firstCell.Descendants<Run>().First();
+            run.RunProperties.Should().NotBeNull();
+            run.RunProperties!.Bold.Should().NotBeNull();
+        }
+    }
+
+    [Fact]
+    public void Convert_PipeTable_CellTextExtractedCorrectly()
+    {
+        var (doc, converter) = CreateDocAndConverter();
+        using (doc)
+        {
+            var markdown = "| Name | Value |\n| --- | --- |\n| **bold** | `code` |";
+            var elements = converter.Convert(markdown);
+
+            var table = (Table)elements[0];
+            var dataRow = table.Elements<TableRow>().Last();
+            var cells = dataRow.Elements<TableCell>().ToList();
+
+            // Verify cell text is actual content, not type names
+            cells[0].InnerText.Should().Be("bold");
+            cells[1].InnerText.Should().Be("code");
+        }
+    }
+
+    [Fact]
+    public void Convert_MarkdownWithTextAndTable_ReturnsBothElements()
+    {
+        var (doc, converter) = CreateDocAndConverter();
+        using (doc)
+        {
+            var markdown = "# Header\n\nSome text.\n\n| A | B |\n| --- | --- |\n| 1 | 2 |\n\nMore text.";
+            var elements = converter.Convert(markdown);
+
+            // Should contain: heading, paragraph, table, paragraph
+            elements.Should().HaveCount(4);
+            elements[0].Should().BeOfType<Paragraph>(); // heading
+            elements[1].Should().BeOfType<Paragraph>(); // "Some text."
+            elements[2].Should().BeOfType<Table>();       // the table
+            elements[3].Should().BeOfType<Paragraph>(); // "More text."
+        }
+    }
 }
