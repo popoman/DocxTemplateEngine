@@ -49,6 +49,8 @@ public class MarkdownToOpenXmlConverter
             ListBlock list => ConvertList(list),
             QuoteBlock quote => ConvertQuoteBlock(quote),
             ThematicBreakBlock => ConvertThematicBreak(),
+            LinkReferenceDefinitionGroup => [],  // Internal Markdig metadata, not rendered
+            LinkReferenceDefinition => [],
             _ => ConvertFallbackBlock(block)
         };
     }

@@ -156,4 +156,20 @@ public class MarkdownToOpenXmlConverterTests : IDisposable
             elements.Should().HaveCount(2);
         }
     }
+
+    [Fact]
+    public void Convert_LinkReferenceDefinitions_NotRenderedAsText()
+    {
+        var (doc, converter) = CreateDocAndConverter();
+        using (doc)
+        {
+            var markdown = "Click [here][link1] for details.\n\n[link1]: https://example.com";
+            var elements = converter.Convert(markdown);
+
+            // Should not contain the type name "LinkReferenceDefinitionGroup"
+            var fullText = string.Join(" ", elements.Select(e => e.InnerText));
+            fullText.Should().NotContain("LinkReferenceDefinition");
+            fullText.Should().Contain("here");
+        }
+    }
 }
