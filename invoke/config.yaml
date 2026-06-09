@@ -1,0 +1,24 @@
+placeholders:
+  intro:
+    type: Markdown
+    source: intro.md
+  logo:
+    type: Image
+    source: logo.png
+    widthCm: 3.0
+    heightCm: 3.0
+  metrics:
+    type: MarkdownTable
+    source: table.md
+  pdf_attachment:
+    type: File
+    source: sample.pdf
+    displayName: Sample PDF
+  yaml_attachment:
+    type: File
+    source: attached.yaml
+    displayName: Sample YAML
+  docx_attachment:
+    type: File
+    source: template.docx
+    displayName: Template Doc
