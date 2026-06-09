@@ -184,6 +184,8 @@ public class TemplateProcessorIntegrationTests : IDisposable
 
         using var doc = WordprocessingDocument.Open(outputPath, false);
         doc.MainDocumentPart!.EmbeddedPackageParts.Should().NotBeEmpty();
+        doc.MainDocumentPart!.ImageParts
+            .Should().ContainSingle(p => p.ContentType == "image/png");
     }
 
     [Fact]

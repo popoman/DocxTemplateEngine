@@ -59,15 +59,10 @@ public class FileObjectHandler : IPlaceholderHandler
 
         var embeddedPartId = mainPart.GetIdOfPart(embeddedPart);
 
-        // Create an icon image for the embedded object
-        var iconImagePart = mainPart.AddImagePart(ImagePartType.Emf);
+        // Create an icon image for the embedded object using the bundled static PNG.
+        var iconImagePart = mainPart.AddImagePart(ImagePartType.Png);
         var iconImageId = mainPart.GetIdOfPart(iconImagePart);
-
-        // Generate a minimal EMF icon placeholder (a small rectangle with text)
-        using (var emfStream = GenerateMinimalIconEmf())
-        {
-            iconImagePart.FeedData(emfStream);
-        }
+        iconImagePart.FeedData(new MemoryStream(IconBytes, writable: false));
 
         var progId = ProgIdMap.GetValueOrDefault(ext, "Package");
 
@@ -144,46 +139,17 @@ public class FileObjectHandler : IPlaceholderHandler
         return paragraph;
     }
 
-    /// <summary>
-    /// Generates a minimal EMF image to serve as an icon placeholder.
-    /// In a production app, you'd extract actual icons from the OS or use pre-made icons.
-    /// </summary>
-    private static MemoryStream GenerateMinimalIconEmf()
-    {
-        var ms = new MemoryStream();
-        using (var bw = new BinaryWriter(ms, System.Text.Encoding.UTF8, leaveOpen: true))
-        {
-            // EMF Header
-            bw.Write((int)1);          // Record type: EMR_HEADER
-            bw.Write((int)88);         // Record size
-            bw.Write((int)0);          // BoundsLeft
-            bw.Write((int)0);          // BoundsTop
-            bw.Write((int)63);         // BoundsRight
-            bw.Write((int)63);         // BoundsBottom
-            bw.Write((int)0);          // FrameLeft
-            bw.Write((int)0);          // FrameTop
-            bw.Write((int)2116);       // FrameRight
-            bw.Write((int)2116);       // FrameBottom
-            bw.Write((int)0x464D4520); // Signature
-            bw.Write((int)0x00010000); // Version
-            bw.Write((int)100);        // Bytes in file (approx)
-            bw.Write((int)2);          // Number of records
-            bw.Write((short)0);        // Number of handles
-            bw.Write((short)0);        // Reserved
-            bw.Write((int)0);          // nDescription
-            bw.Write((int)0);          // offDescription
-            bw.Write((int)0);          // nPalEntries
-            bw.Write((int)1024);       // DeviceWidth
-            bw.Write((int)768);        // DeviceHeight
-            bw.Write((int)320);        // MillimetersWidth
-            bw.Write((int)240);        // MillimetersHeight
+    private const string IconResourceName = "DocxTemplateEngine.Resources.file-icon.png";
 
-            // EMR_EOF record
-            bw.Write((int)14);         // Record type: EMR_EOF
-            bw.Write((int)12);         // Record size
-            bw.Write((int)0);          // nPalEntries
-        }
-        ms.Position = 0;
-        return ms;
+    private static readonly byte[] IconBytes = LoadIconBytes();
+
+    private static byte[] LoadIconBytes()
+    {
+        using var stream = typeof(FileObjectHandler).Assembly.GetManifestResourceStream(IconResourceName)
+            ?? throw new InvalidOperationException(
+                $"Embedded icon resource '{IconResourceName}' not found in assembly.");
+        using var ms = new MemoryStream();
+        stream.CopyTo(ms);
+        return ms.ToArray();
     }
 }
