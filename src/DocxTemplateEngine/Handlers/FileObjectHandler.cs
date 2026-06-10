@@ -9,12 +9,19 @@ using DocumentFormat.OpenXml.Vml.Office;
 namespace DocxTemplateEngine.Handlers;
 
 /// <summary>
-/// Embeds a file as an OLE object (embedded package) in the DOCX document.
-/// The file appears as a clickable icon with a display name.
+/// Embeds a file as an OLE object (clickable icon) in the DOCX document.
+/// Office formats are stored as raw OOXML packages; everything else is
+/// wrapped in a CFBF Object Packager container so Word can activate the
+/// embed regardless of the host's installed apps.
 /// </summary>
 public class FileObjectHandler : IPlaceholderHandler
 {
-    private static readonly Dictionary<string, string> ProgIdMap = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly HashSet<string> OfficeExtensions = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ".docx", ".doc", ".xlsx", ".xls", ".pptx", ".ppt"
+    };
+
+    private static readonly Dictionary<string, string> OfficeProgIdMap = new(StringComparer.OrdinalIgnoreCase)
     {
         [".xlsx"] = "Excel.Sheet.12",
         [".xls"] = "Excel.Sheet.8",
@@ -22,13 +29,9 @@ public class FileObjectHandler : IPlaceholderHandler
         [".doc"] = "Word.Document.8",
         [".pptx"] = "PowerPoint.Show.12",
         [".ppt"] = "PowerPoint.Show.8",
-        [".pdf"] = "AcroExch.Document.DC",
-        [".txt"] = "Package",
-        [".csv"] = "Excel.Sheet.12",
-        [".zip"] = "Package",
     };
 
-    private static readonly Dictionary<string, string> ContentTypeMap = new(StringComparer.OrdinalIgnoreCase)
+    private static readonly Dictionary<string, string> OfficeContentTypeMap = new(StringComparer.OrdinalIgnoreCase)
     {
         [".xlsx"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
         [".xls"] = "application/vnd.ms-excel",
@@ -36,46 +39,55 @@ public class FileObjectHandler : IPlaceholderHandler
         [".doc"] = "application/msword",
         [".pptx"] = "application/vnd.openxmlformats-officedocument.presentationml.presentation",
         [".ppt"] = "application/vnd.ms-powerpoint",
-        [".pdf"] = "application/pdf",
-        [".txt"] = "text/plain",
-        [".csv"] = "text/csv",
-        [".zip"] = "application/zip",
     };
+
+    private const string OleObjectContentType = "application/vnd.openxmlformats-officedocument.oleObject";
+    private const string GenericProgId = "Package";
 
     public void Replace(PlaceholderMatch match, string source, WordprocessingDocument document, PlaceholderEntry entry)
     {
         var mainPart = document.MainDocumentPart!;
         var ext = System.IO.Path.GetExtension(source).ToLowerInvariant();
         var displayName = entry.DisplayName ?? System.IO.Path.GetFileName(source);
+        var fileName = System.IO.Path.GetFileName(source);
 
-        // Embed the file as a package part
-        var contentType = ContentTypeMap.GetValueOrDefault(ext, "application/octet-stream");
-        var embeddedPart = mainPart.AddEmbeddedPackagePart(contentType);
+        string embeddedPartId;
+        string progId;
 
-        using (var fileStream = System.IO.File.OpenRead(source))
+        if (OfficeExtensions.Contains(ext))
         {
-            embeddedPart.FeedData(fileStream);
+            var contentType = OfficeContentTypeMap[ext];
+            var part = mainPart.AddEmbeddedPackagePart(contentType);
+            using (var fileStream = System.IO.File.OpenRead(source))
+            {
+                part.FeedData(fileStream);
+            }
+            embeddedPartId = mainPart.GetIdOfPart(part);
+            progId = OfficeProgIdMap[ext];
+        }
+        else
+        {
+            var part = mainPart.AddEmbeddedObjectPart(OleObjectContentType);
+            var cfbfBytes = OlePackageBuilder.Build(source, fileName);
+            using (var ms = new MemoryStream(cfbfBytes, writable: false))
+            {
+                part.FeedData(ms);
+            }
+            embeddedPartId = mainPart.GetIdOfPart(part);
+            progId = GenericProgId;
         }
 
-        var embeddedPartId = mainPart.GetIdOfPart(embeddedPart);
-
-        // Create an icon image for the embedded object using the bundled static PNG.
         var iconImagePart = mainPart.AddImagePart(ImagePartType.Png);
         var iconImageId = mainPart.GetIdOfPart(iconImagePart);
         iconImagePart.FeedData(new MemoryStream(IconBytes, writable: false));
 
-        var progId = ProgIdMap.GetValueOrDefault(ext, "Package");
-
-        // Build the OLE object paragraph
         var oleObject = CreateOleObjectParagraph(embeddedPartId, iconImageId, progId, displayName);
 
-        // Remove placeholder and insert the OLE object
         PlaceholderFinder.RemovePlaceholderText(match);
 
         var paragraph = match.Paragraph;
         var parent = paragraph.Parent!;
 
-        // Check if paragraph is now empty
         var remainingText = paragraph.InnerText.Trim();
         if (string.IsNullOrEmpty(remainingText))
         {
@@ -92,13 +104,9 @@ public class FileObjectHandler : IPlaceholderHandler
         string embeddedPartId, string iconImageId, string progId, string displayName)
     {
         var paragraph = new Paragraph();
-
         var run = new Run();
-
-        // Create the OLE object element
         var oleObj = new DocumentFormat.OpenXml.Wordprocessing.EmbeddedObject();
 
-        // VML Shape for the icon representation
         var shape = new Shape
         {
             Id = $"_x0000_i{Guid.NewGuid():N}".Substring(0, 20),
@@ -112,10 +120,8 @@ public class FileObjectHandler : IPlaceholderHandler
             Title = displayName
         };
         shape.Append(imageData);
-
         oleObj.Append(shape);
 
-        // OLE Object reference
         var oleObjElement = new DocumentFormat.OpenXml.Vml.Office.OleObject
         {
             Type = OleValues.Embed,
@@ -127,11 +133,9 @@ public class FileObjectHandler : IPlaceholderHandler
         };
 
         oleObj.Append(oleObjElement);
-
         run.Append(oleObj);
         paragraph.Append(run);
 
-        // Add a run with the display name after the object
         var nameRun = new Run();
         nameRun.Append(new Text($" {displayName}") { Space = SpaceProcessingModeValues.Preserve });
         paragraph.Append(nameRun);

@@ -1,8 +1,10 @@
+using System.Text;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using DocxTemplateEngine.Engine;
 using DocxTemplateEngine.Models;
 using FluentAssertions;
+using OpenMcdf;
 
 namespace DocxTemplateEngine.Tests;
 
@@ -183,9 +185,85 @@ public class TemplateProcessorIntegrationTests : IDisposable
         File.Exists(outputPath).Should().BeTrue();
 
         using var doc = WordprocessingDocument.Open(outputPath, false);
-        doc.MainDocumentPart!.EmbeddedPackageParts.Should().NotBeEmpty();
+        var oleParts = doc.MainDocumentPart!.EmbeddedObjectParts.ToList();
+        oleParts.Should().ContainSingle();
+
+        byte[] partBytes;
+        using (var partStream = oleParts[0].GetStream())
+        using (var memory = new MemoryStream())
+        {
+            partStream.CopyTo(memory);
+            partBytes = memory.ToArray();
+        }
+
+        partBytes.Take(8).Should().Equal(new byte[] { 0xD0, 0xCF, 0x11, 0xE0, 0xA1, 0xB1, 0x1A, 0xE1 });
+
+        using (var cfbf = new MemoryStream(partBytes))
+        using (var root = RootStorage.Open(cfbf))
+        {
+            root.CLSID.Should().Be(new Guid("0003000C-0000-0000-C000-000000000046"));
+
+            var entryNames = root.EnumerateEntries()
+                .Where(e => e.Type == EntryType.Stream)
+                .Select(e => e.Name)
+                .ToList();
+            entryNames.Should().BeEquivalentTo(new[] { "CompObj", "ObjInfo", "Ole10Native" });
+
+            using var oleStream = root.OpenStream("Ole10Native");
+            var nativeBuf = new byte[oleStream.Length];
+            oleStream.Read(nativeBuf, 0, nativeBuf.Length);
+
+            Encoding.GetEncoding(1252).GetString(nativeBuf).Should().Contain("report.txt");
+            Encoding.ASCII.GetString(nativeBuf).Should().Contain("Sample report content");
+        }
+
         doc.MainDocumentPart!.ImageParts
             .Should().ContainSingle(p => p.ContentType == "image/png");
+    }
+
+    [Fact]
+    public void Process_FileObjectPlaceholder_OfficeFile_StoresRawPackage()
+    {
+        var templatePath = TestDocxHelper.CreateTemplateWithPlaceholders(_tempDir, "Attachment");
+
+        var nestedSource = TestDocxHelper.CreateTemplateWithPlaceholders(_tempDir, "Inside");
+        var nestedDocx = Path.Combine(_tempDir, "nested.docx");
+        File.Move(nestedSource, nestedDocx);
+
+        var configJson = $$"""
+        {
+          "placeholders": {
+            "Attachment": {
+              "type": "file",
+              "source": "nested.docx",
+              "displayName": "Nested Doc"
+            }
+          }
+        }
+        """;
+
+        var configPath = Path.Combine(_tempDir, "config.json");
+        File.WriteAllText(configPath, configJson);
+
+        var outputPath = Path.Combine(_tempDir, "output_office.docx");
+        var config = TemplateConfig.Load(configPath);
+        var processor = new TemplateProcessor(verbose: false);
+
+        processor.Process(templatePath, config, outputPath);
+
+        using var doc = WordprocessingDocument.Open(outputPath, false);
+        var pkgParts = doc.MainDocumentPart!.EmbeddedPackageParts.ToList();
+        pkgParts.Should().ContainSingle();
+
+        byte[] partBytes;
+        using (var partStream = pkgParts[0].GetStream())
+        using (var memory = new MemoryStream())
+        {
+            partStream.CopyTo(memory);
+            partBytes = memory.ToArray();
+        }
+
+        partBytes.Take(4).Should().Equal(new byte[] { 0x50, 0x4B, 0x03, 0x04 });
     }
 
     [Fact]
