@@ -10,7 +10,8 @@ Implementer-side notes. README.md covers what the tool does for end users — th
 - `DocumentFormat.OpenXml` 3.2 — DOCX/OOXML manipulation.
 - `Markdig` — Markdown parsing.
 - `YamlDotNet` — YAML config support (JSON via `System.Text.Json`).
-- `OpenMcdf` 3.1.3 — declared but **currently unused** (see "OLE embedding limitation" below).
+- `OpenMcdf` 3.1.3 — builds the CFBF compound-file container used to wrap non-Office embeds (see "File embedding" below).
+- `System.Text.Encoding.CodePages` — required to use windows-1252 (CP 1252) under single-file publish; `OlePackageBuilder` registers the provider in a static initializer.
 
 Single-file publish constrains us: don't pull in `System.Drawing.Common` or other native-heavy deps. PNG/JPEG dimensions are read from binary headers in `ImageHandler.ReadImageDimensions` for this reason.
 
@@ -47,7 +48,8 @@ src/DocxTemplateEngine/
     MarkdownHandler.cs            Markdown -> OpenXML elements
     MarkdownTableHandler.cs       Pipe table -> w:tbl, with auto-detect of "populate existing table" mode
     ImageHandler.cs               Inline image insertion
-    FileObjectHandler.cs          OLE-embedded file with clickable icon
+    FileObjectHandler.cs          OLE-embedded file with clickable icon (Office vs generic CFBF path)
+    OlePackageBuilder.cs          CFBF Object Packager wrapper for non-Office embeds
   Converters/                     Markdig -> OpenXML conversion helpers
 tests/DocxTemplateEngine.Tests/
   TestDocxHelper.cs               Builds a minimal in-memory template docx for tests
@@ -79,28 +81,46 @@ Word frequently splits `{{Placeholder}}` across multiple `<w:r>` runs (e.g. auto
 
 If you add a new placeholder type that has format constraints (e.g. only `.md` files), put the check in `TemplateConfig.Validate` so failures surface before any document mutation begins.
 
-## File embedding (FileObjectHandler) — current state and known limitation
+## File embedding (FileObjectHandler)
 
-`FileObjectHandler.Replace` does the same thing for **every** file extension:
+`FileObjectHandler.Replace` branches on extension via `OfficeExtensions` (`.docx`, `.doc`, `.xlsx`, `.xls`, `.pptx`, `.ppt`):
 
-1. `mainPart.AddEmbeddedPackagePart(contentType)` — adds an `/word/embeddings/.../*` part with a `package` relationship.
-2. `embeddedPart.FeedData(fileStream)` — writes the file's **raw bytes** into that part.
-3. Adds an EMF icon image (built by `GenerateMinimalIconEmf` — a literal hand-rolled minimal EMF, not a real raster) and a VML shape + `OleObject` element pointing at both the icon and the embedded part.
+- **Office path:** `mainPart.AddEmbeddedPackagePart(contentType)` + `FeedData(fileStream)` writes raw OOXML bytes; ProgID comes from `OfficeProgIdMap` (e.g. `Word.Document.12`). Word activates these natively.
+- **Generic path (everything else):** `mainPart.AddEmbeddedObjectPart("application/vnd.openxmlformats-officedocument.oleObject")` for an `oleObject` relationship; bytes come from `OlePackageBuilder.Build(source, fileName)` which produces a CFBF compound file. ProgID is hard-coded to `Package` so activation defers to the OS file association (works without Acrobat/Notepad++/etc. specifically installed).
 
-`ProgIdMap` (FileObjectHandler.cs:17) selects a ProgID per extension: `Excel.Sheet.12` for `.xlsx`/`.csv`, `Word.Document.12` for `.docx`, `AcroExch.Document.DC` for `.pdf`, `Package` for `.txt`/`.zip`, etc.
+Both paths share `CreateOleObjectParagraph` for the VML shape + `OleObject` element + icon image part.
 
-**Known limitation — non-OOXML embeds.** Word expects non-OOXML embeds (PDF, TXT, CSV, JSON, etc.) to be wrapped in a CFBF (Compound File Binary Format) container with `Ole`/`CompObj`/`Ole10Native` streams and the root storage CLSID set to `{0003000C-0000-0000-C000-000000000046}` (legacy Object Packager). The current code skips that and just stores raw bytes. The icon renders, but double-click activation is unreliable: behavior ranges from "opens fine" (when the host app handles the ProgID directly) to "silent no-op" or *"server application, source file, or item cannot be found"*. The `OpenMcdf` package was added in anticipation of writing a CFBF wrapper but the wrapper is not yet implemented.
+### `OlePackageBuilder` — the CFBF blob
 
-The current integration test (`TemplateProcessorIntegrationTests.cs:186`) only checks `EmbeddedPackageParts.Should().NotBeEmpty()` — that asserts a part exists, not that the embed actually activates in Word. If you implement CFBF wrapping, replace this with structural assertions: CFBF magic bytes `D0 CF 11 E0 A1 B1 1A E1` at offset 0, original file content round-tripped through the `Ole10Native` stream, etc., and load the output in real Word as part of the smoke test (`invoke/build-document.ps1`).
+Reproduces, byte-for-byte, what Word writes when you "Insert > Object > Create from file > Display as icon" on a non-Office file. Root storage CLSID `{0003000C-0000-0000-C000-000000000046}` (Object Packager) plus three streams:
 
-When picking a ProgID for a new extension: native OOXML formats use the matching Office ProgID. For everything else, prefer `Package` (defers to OS file association, works without any specific app installed) over app-specific ProgIDs like `AcroExch.Document.DC` which silently fail when the assumed app isn't on the target machine.
+| Stream | Purpose | Notes |
+|---|---|---|
+| `\x01CompObj` | Class identification | 76 bytes, fixed except for CLSID. AnsiUserType `"OLE Package"`, AnsiClipboardFormat absent (marker = 0), Reserved1 string `"Package"`, Unicode marker `0x71B239F4`, all unicode tail strings empty. |
+| `\x03ObjInfo` | Word-specific object state | Static 6 bytes: `40 00 03 00 01 00`. Note the `\x03` prefix (not `\x01`) per [MS-DOC] ObjectPool conventions. |
+| `\x01Ole10Native` | The wrapped file | uint32 streamSize, uint16 `0x0002`, AnsiZ label, AnsiZ originalPath, uint32 `0x00030000`, uint32 tempPathLen, AnsiZ tempPath, uint32 nativeDataLen, raw file bytes. |
+
+Stream-name prefixes (`\x01`, `\x03`) are control bytes embedded directly in the C# string literals. The Read tool and most editors hide them, so search for the const declarations by name (`CompObjStreamName` etc.) rather than by visible text. OpenMcdf 3.1.3 stores stream names verbatim — it does **not** auto-prepend the prefix.
+
+`OlePackageBuilder` writes via windows-1252 (`Encoding.GetEncoding(1252)`). The static initializer calls `Encoding.RegisterProvider(CodePagesEncodingProvider.Instance)` because CP 1252 is not built into the trimmed BCL used by single-file publish.
+
+### Adding a new extension
+
+1. Office-native (matched by Office app's OOXML format) → add to `OfficeExtensions` + `OfficeProgIdMap` + `OfficeContentTypeMap`.
+2. Anything else → no code change needed. The generic path handles arbitrary binaries; ProgID `Package` + the OS file association will do the right thing on the target machine.
+
+Do not bring back app-specific ProgIDs (`AcroExch.Document.DC`, `Excel.Sheet.12` for `.csv`, etc.) — they silently fail when the assumed host app isn't installed or registered.
+
+### Verifying changes
+
+`Process_FileObjectPlaceholder_EmbedsFile` and `Process_FileObjectPlaceholder_OfficeFile_StoresRawPackage` (both in `TemplateProcessorIntegrationTests.cs`) cover the structural side: CFBF magic, root CLSID, stream presence, label and payload round-trip for the generic path, and ZIP magic preservation for the Office path. They will not catch behavioral regressions in real Word — run `invoke/build-document.ps1` and double-click each icon to confirm activation.
 
 ## Test conventions
 
 - xUnit + FluentAssertions throughout.
 - Each test class with file I/O implements `IDisposable`, creates a per-test temp dir in its constructor (`Path.Combine(Path.GetTempPath(), $"DocxTests_{Guid.NewGuid():N}")`), and deletes it in `Dispose`. Drop new fixtures into the temp dir, not `tests/.../TestData/`.
 - `TestDocxHelper.CreateTemplateWithPlaceholders(_tempDir, "Foo")` builds a minimal docx containing `{{Foo}}`. Pass multiple names for multiple placeholders. Variants exist for split-run and mixed-content templates.
-- Structural assertions beat existence assertions — see the `EmbeddedPackageParts.Should().NotBeEmpty()` example above for what *not* to settle for. For embeds, prefer asserting bytes/content; for tables, assert row counts and cell text; for images, assert the `Drawing` element + image part length.
+- Structural assertions beat existence assertions. `EmbeddedPackageParts.Should().NotBeEmpty()` proves a part exists, not that it activates — the OLE-embed test now asserts CFBF magic, root CLSID, stream names, and round-trips the payload through `Ole10Native`. Apply the same standard elsewhere: for tables assert row counts and cell text; for images assert the `Drawing` element + image part length.
 
 ## Things that look like bugs but aren't
 
