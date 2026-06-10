@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Implementer-side notes. README.md covers what the tool does for end users — this file covers what is non-obvious when **changing** the code.
+Implementer-side notes. `src/DocxTemplateEngine/DocxTemplateEngine.usage.md` covers what the tool does for end users (and ships next to the published exe); `README.md` covers project-level setup; this file covers what is non-obvious when **changing** the code.
 
 ## Stack
 
