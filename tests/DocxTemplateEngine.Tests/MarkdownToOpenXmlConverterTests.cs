@@ -192,7 +192,7 @@ public class MarkdownToOpenXmlConverterTests : IDisposable
     }
 
     [Fact]
-    public void Convert_PipeTable_HeaderCellsAreBold()
+    public void Convert_PipeTable_HeaderCellsHaveNoExplicitRunProperties()
     {
         var (doc, converter) = CreateDocAndConverter();
         using (doc)
@@ -204,8 +204,7 @@ public class MarkdownToOpenXmlConverterTests : IDisposable
             var headerRow = table.Elements<TableRow>().First();
             var firstCell = headerRow.Elements<TableCell>().First();
             var run = firstCell.Descendants<Run>().First();
-            run.RunProperties.Should().NotBeNull();
-            run.RunProperties!.Bold.Should().NotBeNull();
+            run.RunProperties.Should().BeNull();
         }
     }
 

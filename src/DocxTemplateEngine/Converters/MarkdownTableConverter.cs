@@ -1,5 +1,4 @@
 using DocumentFormat.OpenXml;
-using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using Markdig;
 using MarkdigTable = Markdig.Extensions.Tables.Table;
@@ -13,13 +12,6 @@ namespace DocxTemplateEngine.Converters;
 /// </summary>
 public class MarkdownTableConverter
 {
-    private readonly WordprocessingDocument _document;
-
-    public MarkdownTableConverter(WordprocessingDocument document)
-    {
-        _document = document;
-    }
-
     public Table? Convert(string markdown)
     {
         var pipeline = new MarkdownPipelineBuilder()
@@ -51,16 +43,8 @@ public class MarkdownTableConverter
     {
         var table = new Table();
 
-        // Table properties: borders, width
         var tblProps = new TableProperties(
-            new TableBorders(
-                new TopBorder { Val = BorderValues.Single, Size = 4, Color = "auto" },
-                new BottomBorder { Val = BorderValues.Single, Size = 4, Color = "auto" },
-                new LeftBorder { Val = BorderValues.Single, Size = 4, Color = "auto" },
-                new RightBorder { Val = BorderValues.Single, Size = 4, Color = "auto" },
-                new InsideHorizontalBorder { Val = BorderValues.Single, Size = 4, Color = "auto" },
-                new InsideVerticalBorder { Val = BorderValues.Single, Size = 4, Color = "auto" }
-            ),
+            new TableStyle { Val = "TableGrid" },
             new TableWidth { Width = "5000", Type = TableWidthUnitValues.Pct }
         );
         table.Append(tblProps);
@@ -95,48 +79,25 @@ public class MarkdownTableConverter
         {
             if (cell is MarkdigTableCell markdigCell)
             {
-                row.Append(ConvertCell(markdigCell, isHeader));
+                row.Append(ConvertCell(markdigCell));
             }
         }
 
         return row;
     }
 
-    private TableCell ConvertCell(MarkdigTableCell markdigCell, bool isHeader)
+    private TableCell ConvertCell(MarkdigTableCell markdigCell)
     {
         var cell = new TableCell();
-
-        // Shading for header row
-        if (isHeader)
-        {
-            var tcProps = new TableCellProperties(
-                new Shading
-                {
-                    Val = ShadingPatternValues.Clear,
-                    Color = "auto",
-                    Fill = "D9E2F3"
-                }
-            );
-            cell.Append(tcProps);
-        }
-
         var paragraph = new Paragraph();
-        var inlineConverter = new MarkdownToOpenXmlConverter(_document);
 
-        // Extract inline content from the cell
         foreach (var block in markdigCell)
         {
             if (block is Markdig.Syntax.ParagraphBlock pb && pb.Inline != null)
             {
-                var cellContent = ExtractInlineText(pb.Inline);
-                var run = new Run();
-
-                if (isHeader)
-                {
-                    run.Append(new RunProperties(new Bold()));
-                }
-
-                run.Append(new Text(cellContent) { Space = SpaceProcessingModeValues.Preserve });
+                var run = new Run(
+                    new Text(ExtractInlineText(pb.Inline)) { Space = SpaceProcessingModeValues.Preserve }
+                );
                 paragraph.Append(run);
             }
         }

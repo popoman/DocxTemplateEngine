@@ -27,7 +27,7 @@ public class MarkdownTableHandler : IPlaceholderHandler
 
     private void CreateNewTable(PlaceholderMatch match, string markdown, WordprocessingDocument document)
     {
-        var converter = new MarkdownTableConverter(document);
+        var converter = new MarkdownTableConverter();
         var table = converter.Convert(markdown);
 
         if (table == null)
@@ -56,7 +56,7 @@ public class MarkdownTableHandler : IPlaceholderHandler
     private void PopulateExistingTable(PlaceholderMatch match, string markdown,
         WordprocessingDocument document, TableCell placeholderCell)
     {
-        var converter = new MarkdownTableConverter(document);
+        var converter = new MarkdownTableConverter();
         var dataRows = converter.ExtractDataRows(markdown);
 
         if (dataRows.Count == 0)

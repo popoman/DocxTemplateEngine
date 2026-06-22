@@ -244,7 +244,7 @@ public class ExistingTablePopulationTests : IDisposable
         using var doc = WordprocessingDocument.Create(path, WordprocessingDocumentType.Document);
         doc.AddMainDocumentPart().Document = new Document(new Body());
 
-        var converter = new MarkdownTableConverter(doc);
+        var converter = new MarkdownTableConverter();
         var rows = converter.ExtractDataRows("| A | B |\n|---|---|\n| 1 | 2 |\n| 3 | 4 |");
 
         rows.Should().HaveCount(2);
@@ -259,7 +259,7 @@ public class ExistingTablePopulationTests : IDisposable
         using var doc = WordprocessingDocument.Create(path, WordprocessingDocumentType.Document);
         doc.AddMainDocumentPart().Document = new Document(new Body());
 
-        var converter = new MarkdownTableConverter(doc);
+        var converter = new MarkdownTableConverter();
         var rows = converter.ExtractDataRows("Just plain text.");
 
         rows.Should().BeEmpty();

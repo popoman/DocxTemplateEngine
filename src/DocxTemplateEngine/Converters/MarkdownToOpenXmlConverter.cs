@@ -254,7 +254,7 @@ public class MarkdownToOpenXmlConverter
 
     private List<OpenXmlElement> ConvertTable(MarkdigTable markdigTable)
     {
-        var tableConverter = new MarkdownTableConverter(_document);
+        var tableConverter = new MarkdownTableConverter();
         var table = tableConverter.ConvertTable(markdigTable);
         return [table];
     }

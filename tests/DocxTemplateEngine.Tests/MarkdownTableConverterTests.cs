@@ -28,7 +28,7 @@ public class MarkdownTableConverterTests : IDisposable
         var doc = WordprocessingDocument.Create(path, WordprocessingDocumentType.Document);
         var mainPart = doc.AddMainDocumentPart();
         mainPart.Document = new Document(new Body());
-        return (doc, new MarkdownTableConverter(doc));
+        return (doc, new MarkdownTableConverter());
     }
 
     [Fact]
@@ -48,7 +48,7 @@ public class MarkdownTableConverterTests : IDisposable
     }
 
     [Fact]
-    public void Convert_HeaderRow_HasBoldAndShading()
+    public void Convert_HeaderRow_HasTableHeaderMark()
     {
         var (doc, converter) = CreateDocAndConverter();
         using (doc)
@@ -57,16 +57,9 @@ public class MarkdownTableConverterTests : IDisposable
             var table = converter.Convert(markdown);
 
             var firstRow = table!.Elements<TableRow>().First();
-
-            // Check table header property
             var trProps = firstRow.GetFirstChild<TableRowProperties>();
             trProps.Should().NotBeNull();
             trProps!.GetFirstChild<TableHeader>().Should().NotBeNull();
-
-            // Check cell shading
-            var firstCell = firstRow.Elements<TableCell>().First();
-            var shading = firstCell.GetFirstChild<TableCellProperties>()?.GetFirstChild<Shading>();
-            shading.Should().NotBeNull();
         }
     }
 
@@ -82,7 +75,7 @@ public class MarkdownTableConverterTests : IDisposable
     }
 
     [Fact]
-    public void Convert_Table_HasBorders()
+    public void Convert_Table_HasTableGridStyle()
     {
         var (doc, converter) = CreateDocAndConverter();
         using (doc)
@@ -93,8 +86,9 @@ public class MarkdownTableConverterTests : IDisposable
             var tblProps = table!.GetFirstChild<TableProperties>();
             tblProps.Should().NotBeNull();
 
-            var borders = tblProps!.GetFirstChild<TableBorders>();
-            borders.Should().NotBeNull();
+            var style = tblProps!.GetFirstChild<TableStyle>();
+            style.Should().NotBeNull();
+            style!.Val!.Value.Should().Be("TableGrid");
         }
     }
 }
