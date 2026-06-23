@@ -244,4 +244,30 @@ public class MarkdownToOpenXmlConverterTests : IDisposable
             elements[3].Should().BeOfType<Paragraph>(); // "More text."
         }
     }
+
+    [Fact]
+    public void Convert_HtmlComment_ProducesNoElements()
+    {
+        var (doc, converter) = CreateDocAndConverter();
+        using (doc)
+        {
+            var elements = converter.Convert("<!-- This is a comment -->");
+            elements.Should().BeEmpty();
+        }
+    }
+
+    [Fact]
+    public void Convert_HtmlCommentBetweenParagraphs_CommentIsOmitted()
+    {
+        var (doc, converter) = CreateDocAndConverter();
+        using (doc)
+        {
+            var markdown = "Before\n\n<!-- hidden -->\n\nAfter";
+            var elements = converter.Convert(markdown);
+
+            elements.Should().HaveCount(2);
+            elements[0].InnerText.Should().Be("Before");
+            elements[1].InnerText.Should().Be("After");
+        }
+    }
 }

@@ -53,6 +53,7 @@ public class MarkdownToOpenXmlConverter
             MarkdigTable table => ConvertTable(table),
             LinkReferenceDefinitionGroup => [],  // Internal Markdig metadata, not rendered
             LinkReferenceDefinition => [],
+            HtmlBlock => [],                     // HTML comments (<!-- ... -->) and raw HTML — skip
             _ => ConvertFallbackBlock(block)
         };
     }
