@@ -46,12 +46,12 @@ public static class PlaceholderFinder
         if (runs.Count == 0) return results;
 
         // Concatenate all run text to find placeholders across run boundaries
-        var textParts = new List<(Run Run, int RunIndex, string Text)>();
+        var textParts = new List<(Run Run, string Text)>();
         for (int i = 0; i < runs.Count; i++)
         {
             var text = runs[i].InnerText;
             if (!string.IsNullOrEmpty(text))
-                textParts.Add((runs[i], i, text));
+                textParts.Add((runs[i], text));
         }
 
         if (textParts.Count == 0) return results;
@@ -71,8 +71,16 @@ public static class PlaceholderFinder
                 startIdx + OpenDelimiter.Length,
                 endIdx - startIdx - OpenDelimiter.Length).Trim();
 
-            var (startRun, startRunIdx, startCharIdx) = MapPositionToRun(textParts, startIdx);
-            var (endRun, endRunIdx, endCharIdx) = MapPositionToRun(textParts, endIdx + CloseDelimiter.Length - 1);
+            var (_, startRunIdx, startCharIdx) = MapPositionToRun(textParts, startIdx);
+            var (_, endRunIdx, endCharIdx) = MapPositionToRun(textParts, endIdx + CloseDelimiter.Length - 1);
+
+            if (startRunIdx < 0 || endRunIdx < startRunIdx || endRunIdx >= textParts.Count)
+            {
+                throw new InvalidOperationException(
+                    $"Failed to map placeholder '{{{{{name}}}}}' to text runs in paragraph '{PreviewText(fullText)}'. " +
+                    $"Mapped run range: {startRunIdx}-{endRunIdx}, text runs available: {textParts.Count}, " +
+                    $"placeholder span: {startIdx}-{endIdx + CloseDelimiter.Length - 1}.");
+            }
 
             var matchRuns = new List<Run>();
             for (int i = startRunIdx; i <= endRunIdx; i++)
@@ -96,17 +104,19 @@ public static class PlaceholderFinder
     }
 
     private static (Run Run, int RunIndex, int CharIndex) MapPositionToRun(
-        List<(Run Run, int RunIndex, string Text)> textParts, int globalPos)
+        List<(Run Run, string Text)> textParts, int globalPos)
     {
         int cumulative = 0;
-        foreach (var (run, runIndex, text) in textParts)
+        for (int i = 0; i < textParts.Count; i++)
         {
+            var (run, text) = textParts[i];
             if (globalPos < cumulative + text.Length)
-                return (run, runIndex, globalPos - cumulative);
+                return (run, i, globalPos - cumulative);
             cumulative += text.Length;
         }
-        var last = textParts[^1];
-        return (last.Run, last.RunIndex, last.Text.Length - 1);
+        var lastIndex = textParts.Count - 1;
+        var last = textParts[lastIndex];
+        return (last.Run, lastIndex, last.Text.Length - 1);
     }
 
     /// <summary>
@@ -116,12 +126,22 @@ public static class PlaceholderFinder
     public static Run RemovePlaceholderText(PlaceholderMatch match)
     {
         var runs = match.Paragraph.Elements<Run>().ToList();
-        var textParts = new List<(Run Run, int RunIndex, string Text)>();
+        var textParts = new List<(Run Run, string Text)>();
         for (int i = 0; i < runs.Count; i++)
         {
             var text = runs[i].InnerText;
             if (!string.IsNullOrEmpty(text))
-                textParts.Add((runs[i], i, text));
+                textParts.Add((runs[i], text));
+        }
+
+        if (match.StartRunIndex < 0 ||
+            match.EndRunIndex < match.StartRunIndex ||
+            match.EndRunIndex >= textParts.Count)
+        {
+            throw new InvalidOperationException(
+                $"Cannot remove placeholder '{{{{{match.Name}}}}}'. " +
+                $"Run range {match.StartRunIndex}-{match.EndRunIndex} is invalid for paragraph '{PreviewText(match.Paragraph.InnerText)}' " +
+                $"with {textParts.Count} text run(s).");
         }
 
         // Calculate global start/end positions
@@ -138,7 +158,7 @@ public static class PlaceholderFinder
         // Process each run involved
         for (int i = match.StartRunIndex; i <= match.EndRunIndex; i++)
         {
-            var (run, _, text) = textParts[i];
+            var (run, text) = textParts[i];
             int runGlobalStart = 0;
             for (int j = 0; j < i; j++)
                 runGlobalStart += textParts[j].Text.Length;
@@ -166,5 +186,15 @@ public static class PlaceholderFinder
         }
 
         return textParts[match.StartRunIndex].Run;
+    }
+
+    private static string PreviewText(string text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return "<empty>";
+
+        const int maxLength = 120;
+        var normalized = text.Replace("\r", " ").Replace("\n", " ");
+        return normalized.Length <= maxLength ? normalized : normalized[..maxLength] + "...";
     }
 }

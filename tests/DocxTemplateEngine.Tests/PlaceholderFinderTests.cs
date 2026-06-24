@@ -1,3 +1,4 @@
+using DocumentFormat.OpenXml;
 using DocumentFormat.OpenXml.Packaging;
 using DocumentFormat.OpenXml.Wordprocessing;
 using DocxTemplateEngine.Engine;
@@ -59,6 +60,36 @@ public class PlaceholderFinderTests : IDisposable
         matches.Should().HaveCount(1);
         matches[0].Name.Should().Be("SplitTest");
         matches[0].Runs.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public void FindAll_PlaceholderWithEmptyRunBetweenTokens_ReturnsMatch()
+    {
+        var path = Path.Combine(_tempDir, "split_with_empty_run.docx");
+        using (var doc = WordprocessingDocument.Create(path, DocumentFormat.OpenXml.WordprocessingDocumentType.Document))
+        {
+            var mainPart = doc.AddMainDocumentPart();
+            mainPart.Document = new Document(new Body(
+                new Paragraph(
+                    new Run(new Text("{{") { Space = SpaceProcessingModeValues.Preserve }),
+                    new Run(new RunProperties(new Bold())),
+                    new Run(new Text("SplitTest") { Space = SpaceProcessingModeValues.Preserve }),
+                    new Run(new Text("}}") { Space = SpaceProcessingModeValues.Preserve })
+                )
+            ));
+            mainPart.Document.Save();
+        }
+
+        using var readDoc = WordprocessingDocument.Open(path, true);
+        var body = readDoc.MainDocumentPart!.Document.Body!;
+
+        var matches = PlaceholderFinder.FindAll(body);
+
+        matches.Should().HaveCount(1);
+        matches[0].Name.Should().Be("SplitTest");
+
+        PlaceholderFinder.RemovePlaceholderText(matches[0]);
+        PlaceholderFinder.FindAll(body).Should().BeEmpty();
     }
 
     [Fact]

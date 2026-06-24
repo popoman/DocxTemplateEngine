@@ -101,9 +101,9 @@ static int Run(string[] args)
     }
     catch (Exception ex)
     {
-        Console.Error.WriteLine($"Unexpected error: {ex.Message}");
+        Console.Error.WriteLine($"Unexpected error ({ex.GetType().Name}): {ex.Message}");
         if (verbose)
-            Console.Error.WriteLine(ex.StackTrace);
+            Console.Error.WriteLine(ex);
         return 2;
     }
 }
